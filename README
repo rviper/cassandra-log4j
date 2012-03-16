@@ -1,0 +1,7 @@
+This projects adds a custom Log4J appender to any projects needing 
+to publish log messages to a central database storage.
+
+Apache Cassandra is used to handle big amounts of log messages.
+
+Furthermore this project will create a web UI quering log messages.
+
