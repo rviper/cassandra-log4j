@@ -5,7 +5,6 @@ import java.net.UnknownHostException;
 import java.util.Arrays;
 import java.util.UUID;
 
-import me.prettyprint.cassandra.connection.SpeedForJOpTimer;
 import me.prettyprint.cassandra.serializers.StringSerializer;
 import me.prettyprint.cassandra.service.CassandraHostConfigurator;
 import me.prettyprint.cassandra.service.ThriftKsDef;
@@ -26,6 +25,8 @@ import org.apache.log4j.helpers.LogLog;
 import org.apache.log4j.spi.LoggingEvent;
 
 /**
+ * Log4J appender saving messages to a cassandra cluster
+ * 
  * @author starzer
  * 
  */
@@ -33,18 +34,27 @@ public class Log4jAppender extends AppenderSkeleton {
 
     private final static String CLUSTER_NAME = "log-cluster";
 
+    /**
+     * cassandra configuration
+     */
     private String hosts;
     private String instanceId;
     private String keyspace;
     private String columnFamily;
     private int replicationFactor = 1;
 
+    /**
+     * active cluster connection
+     */
     private Cluster cluster;
-
     private ColumnFamilyTemplate<String, String> client;
-    private Thread alive;
 
+    /**
+     * logger states
+     */
     private boolean startedUp = false;
+    private boolean shutdown = false;
+
     private long lastPublishTime = -1;
 
     public Log4jAppender() {
@@ -52,14 +62,16 @@ public class Log4jAppender extends AppenderSkeleton {
 	Runnable r = new Runnable() {
 
 	    public void run() {
-		while (true) {
+		while (!shutdown) {
 		    try {
 			Thread.sleep(1000);
 			if (client == null) {
 			    connect();
 			}
 			if (lastPublishTime > 50) {
-
+			    // TODO: some metrics to deactivate logging to this
+			    // appender if its getting too time consuming, or
+			    // queue
 			}
 		    } catch (Exception e) {
 			LogLog.error("Log4jAppender, " + e.getMessage());
@@ -91,7 +103,7 @@ public class Log4jAppender extends AppenderSkeleton {
 		client.update(updater);
 	    } catch (HectorException e) {
 		client = null;
-		LogLog.error(e.getMessage());
+		LogLog.error("append failed, " + e.getMessage());
 	    }
 	} else {
 	    if (startedUp) {
@@ -103,25 +115,26 @@ public class Log4jAppender extends AppenderSkeleton {
     }
 
     public void close() {
+	shutdown = true;
 	cluster.getConnectionManager().shutdown();
     }
 
     private void connect() throws HectorException {
 	LogLog.debug("creating cassandra cluster connection");
 	CassandraHostConfigurator cassandraHostConfigurator = new CassandraHostConfigurator(hosts);
-	cassandraHostConfigurator.setOpTimer(new SpeedForJOpTimer(CLUSTER_NAME));
 	cassandraHostConfigurator.setMaxActive(20);
 	cassandraHostConfigurator.setCassandraThriftSocketTimeout(500);
 	cassandraHostConfigurator.setMaxWaitTimeWhenExhausted(500);
-	cluster = HFactory.getOrCreateCluster(CLUSTER_NAME, cassandraHostConfigurator);
-	KeyspaceDefinition keyspaceDef = cluster.describeKeyspace(keyspace);
+	Cluster c = HFactory.getOrCreateCluster(CLUSTER_NAME, cassandraHostConfigurator);
+	KeyspaceDefinition keyspaceDef = c.describeKeyspace(keyspace);
 	if (keyspaceDef == null) {
 	    ColumnFamilyDefinition cfDef = HFactory.createColumnFamilyDefinition(keyspace, columnFamily, ComparatorType.BYTESTYPE);
 	    KeyspaceDefinition newKeyspace = HFactory.createKeyspaceDefinition(keyspace, ThriftKsDef.DEF_STRATEGY_CLASS, replicationFactor,
 		    Arrays.asList(cfDef));
-	    cluster.addKeyspace(newKeyspace, false);
+	    c.addKeyspace(newKeyspace, false);
 	}
-	Keyspace ksp = HFactory.createKeyspace(keyspace, cluster);
+	Keyspace ksp = HFactory.createKeyspace(keyspace, c);
+	cluster = c;
 	client = new ThriftColumnFamilyTemplate<String, String>(ksp, columnFamily, StringSerializer.get(), StringSerializer.get());
     }
 
