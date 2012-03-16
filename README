@@ -5,3 +5,11 @@ Apache Cassandra is used to handle big amounts of log messages.
 
 Furthermore this project will create a web UI quering log messages.
 
+Example Usage (Log4J Configuration):
+
+log4j.appender.cluster=at.it_fabrik.cassandra.log4j.Log4jAppender
+log4j.appender.cluster.hosts=10.220.220.6:9160
+log4j.appender.cluster.instanceId=Application1Host6
+log4j.appender.cluster.keyspace=log
+log4j.appender.cluster.columnFamily=LogFamily
+log4j.appender.cluster.replicationFactor=1
